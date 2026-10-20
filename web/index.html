@@ -20,12 +20,30 @@
   #status.ok { color: #89d185; }
   #status.failed { color: #f48771; }
 
+  /* Display and logs on the left, dev tools on the right; stacked when the pane is narrow */
+  #main { flex: 1; min-height: 0; display: flex; gap: 10px; }
+  #left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  #devtools { flex: none; width: 380px; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+  #devtools[hidden] { display: none; }
+  @media (max-width: 760px) {
+    body { height: auto; min-height: 100%; }
+    #main { flex-direction: column; }
+    #left { min-height: 70vh; }
+    #devtools { width: auto; overflow: visible; }
+  }
+
   /* The display area takes the space left over. In 1:1 and real size the watch can be
      bigger than the pane, so it scrolls; margin:auto centres it when it fits. */
   #display { position: relative; flex: 1; min-height: 120px; overflow: auto; display: flex; }
   /* Round panel: the circle clips the square canvas, like the real glass. The ring is a bezel. */
   #watch { flex: none; margin: auto; border-radius: 50%; overflow: hidden;
            box-shadow: 0 0 0 4px #333; background: #000; }
+  /* Haptic buzz: the watch shakes and the bezel lights up while the motor would run */
+  #watch.buzz { animation: buzz 70ms linear infinite; box-shadow: 0 0 0 4px #c586c0, 0 0 18px 4px #c586c088; }
+  @keyframes buzz { 0%, 100% { translate: 0 0; } 25% { translate: 1.5px 0; } 75% { translate: -1.5px 0; } }
+  #hapticBadge { position: absolute; top: 6px; left: 6px; right: 6px; width: fit-content; padding: 3px 8px;
+                 border-radius: 3px; background: #3a2340; color: #e8c6f0; font: 12px ui-monospace, monospace; }
+  #hapticBadge[hidden] { display: none; }
   #screen { display: block; width: 100%; height: 100%; touch-action: none; }
   #screen.pixelated { image-rendering: pixelated; }
 
@@ -67,6 +85,42 @@
   #card { margin: 16px auto; border: 2px solid #4fc1ff; border-radius: 3.18mm; box-sizing: border-box; }
   #cardSize { width: 100%; }
   .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+  /* Dev tools panel (web/devtools.js) */
+  details.dev { background: #252526; border: 1px solid #333; border-radius: 4px; flex: none; }
+  details.dev summary { cursor: pointer; padding: 6px 8px; display: flex; gap: 8px; align-items: baseline; }
+  details.dev summary::before { content: '▸'; color: #888; }
+  details.dev[open] summary::before { content: '▾'; }
+  details.dev .chip { color: #888; font-size: 11px; flex: 1; }
+  details.dev .badge { color: #f48771; font-size: 11px; }
+  details.dev .badge[hidden] { display: none; }
+  details.dev .body { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .dev .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .dev .lbl { width: 62px; flex: none; color: #999; }
+  .dev .sub { margin-top: 6px; padding-top: 6px; border-top: 1px solid #333; font-weight: 600; color: #ddd; }
+  .dev .hint { font-size: 12px; }
+  .dev input[type=text], .dev input[type=number], .dev input[type=date], .dev input[type=time],
+  .dev input[type=datetime-local] { font: inherit; color: #ddd; background: #1e1e1e; border: 1px solid #444;
+         border-radius: 3px; padding: 2px 5px; color-scheme: dark; min-width: 0; }
+  .dev input.wide { flex: 1; }
+  .dev input.num { width: 64px; }
+  .dev input[type=range] { flex: 1; min-width: 80px; }
+  .dev .unit { color: #999; font-size: 12px; }
+  .dev .unit.warn { color: #cca700; }
+  .dev .seg { display: inline-flex; }
+  .dev .seg button { border-radius: 0; margin-left: -1px; }
+  .dev .seg button:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
+  .dev .seg button:last-child { border-radius: 0 3px 3px 0; }
+  .dev button.on { background: #094771; border-color: #1177bb; color: #fff; }
+  .dev button.hold { min-width: 56px; user-select: none; touch-action: none; }
+  .dev .list { display: flex; flex-direction: column; gap: 3px; }
+  .dev .list.log { max-height: 160px; overflow: auto; font: 12px ui-monospace, monospace; }
+  .dev .item { display: flex; gap: 6px; align-items: center; background: #1e1e1e; padding: 3px 6px; border-radius: 3px; }
+  .dev .item .id { color: #666; font: 11px ui-monospace, monospace; }
+  .dev .item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dev .item button { padding: 1px 6px; }
+  .dev .mono, .dev .pin { font: 12px ui-monospace, monospace; }
+  .dev .pin { background: #1e1e1e; padding: 2px 6px; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -85,9 +139,13 @@
     <button id="calibrate" title="Match the screen to a credit card so Real size is accurate">Calibrate…</button>
     <label title="Make each redraw take as long as the SPI transfer on the watch"><input type="checkbox" id="throttle"> Throttle to real frame time</label>
     <span id="zoomHint" class="hint"></span>
+    <label title="Show the dev tools panel" style="margin-left: auto"><input type="checkbox" id="showDevtools"> Dev tools</label>
   </div>
+  <div id="main">
+  <div id="left">
   <div id="display">
     <div id="watch"><canvas id="screen" width="466" height="466"></canvas></div>
+    <div id="hapticBadge" hidden></div>
     <div id="errors" hidden></div>
     <div id="usb" hidden>
       <div><b>USB mode</b><br>The watch rebooted into its bootloader, ready to be flashed.</div>
@@ -102,6 +160,9 @@
     </div>
     <pre id="log" class="logbox"></pre>
     <div id="actions" class="logbox" hidden></div>
+  </div>
+  </div>
+  <aside id="devtools"></aside>
   </div>
 
   <dialog id="calibration">
@@ -118,6 +179,7 @@
 
   <script src="config.js"></script>
   <script src="devices.js"></script>
+  <script src="devtools.js"></script>
   <script src="sim.js"></script>
 </body>
 </html>

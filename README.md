@@ -6,7 +6,7 @@ See [SPEC.md](SPEC.md) for the full plan.
 
 ## Status
 
-Stage 5 of 7: hal/ and app/ in the firmware, simulated hardware behind them, console and action log.
+Stage 6 of 7: the dev tools panel, with every device on the watch.
 
 ## Codespace
 
@@ -111,6 +111,60 @@ Each `hal/x.h` is matched by `fakes/x.c` in this repo. If you change a header, t
 has to change too (the build says so if it doesn't compile). A header with no fake gives a build
 warning.
 
+## Dev tools panel
+
+The column to the right of the display (under it when the pane is narrow; the **Dev tools**
+checkbox hides it). One section per device; click a title to fold it. Each section has an
+**Enabled / Not responding** switch: Not responding makes that device's hal functions return
+`-EIO`, so you can test how your code copes with a broken part. The title shows a red
+*Not responding* while it's off.
+
+- **Bluetooth** (the dev tools play the iPhone):
+  - *Link*: disconnected, advertising, connected, bonded. Time, notifications and music only
+    reach the watch while bonded. On bonding the phone sends its time, the music state, and every
+    notification already on it, flagged `PREEXISTING`.
+  - *Time (CTS)*: send the phone's time now (adjust reason `EXTERNAL`), or a custom date, time
+    and time zone (`MANUAL`). A time zone different from the last one sent adds `ZONE_CHANGED`.
+  - *Notifications (ANCS)*: presets for Messages, Mail, Instagram and Calendar fill in the app id
+    and category; edit the title and message. The byte counters turn yellow past 32 bytes, where
+    the watch gets the text cut. *Long text* fills in text that's too long, with an emoji to check a
+    cut never splits a character. *Send burst of 10*, and the list of notifications on the phone
+    with *Remove*. Anything sent while not bonded waits on the phone and arrives on bonding.
+  - *Calls*: an incoming call with a caller name; *Call ended* (the caller hung up) or *Missed*
+    (the phone also posts a Missed Call). Accept and decline from the watch show in the action log;
+    accepting shows "In a call".
+  - *Music (AMS)*: title, artist, album, playing or paused, position, length and volume. A field's
+    change is sent when you leave it. *Load sample track* and ⏮ ⏭ go through a few made-up tracks
+    (one has names too long for the watch). Commands from the watch change this player.
+- **Fuel gauge** (Not responding by default, like the board): percent and voltage sliders that
+  follow a typical LiPo curve (72 % is about 3.96 V); untick *Follow the LiPo curve* to set them
+  separately. The *battery simulation* discharges a 500 mAh cell at the load current, or charges it
+  at the charge current while the charger is charging, sped up by the multiplier. The battery runs
+  even with the gauge Not responding, because only the I²C chip is missing.
+- **Charger**: USB plugged in, and the BQ25185 state with the STAT1/STAT2 levels your code reads
+  (from the datasheet: charging H/L, done or no input H/H, recoverable fault L/H, latched fault L/L).
+  Plugging in starts a charge; the simulation switches to *Charge complete* at 100 %.
+- **Accelerometer**: x, y, z in g (±4 g, then the chip saturates), presets for flat, wrist
+  raised, arm down and walking (arm swing, footsteps and noise). *Raise wrist* moves from arm down to
+  looking at the watch in 0.7 s, firing the wake interrupt as it starts and tilt at the end. *Fire
+  wake* and *Fire tilt* set the interrupt bits for `imu_get_events()`. The axes assume x to 3 o'clock,
+  y to 12 o'clock and z out of the face on the left wrist. Check that against how the chip sits on your board.
+- **Haptic**: each buzz shakes the watch, lights the bezel, and shows the effect names (the
+  DRV2605L library list) or sequence with an approximate length. TI doesn't publish exact effect
+  lengths. A log of every haptic call and a *Mute* (no pulse; calls are still logged).
+- **RTC** (Not responding by default): its time against this computer's clock, set it (or *Now*),
+  run or stop it, and drift in ppm (20 ppm is about 1.7 s a day).
+- **Touch**: where the finger is.
+- **Buttons**: hold PB1 or PB2 with the mouse; `buttons_read()` reports pressed until you let
+  go. With *Act like src/main.c* on, PB1 resets the watch and holding PB2 for 3 s enters USB mode,
+  which is what `handle_buttons()` in `src/main.c` does. Turn it off once your `app/` code reads the buttons
+  and does this itself.
+- **Heart rate and microphone**: placeholders until they get hal/ headers.
+
+The panel only shows what's in `web/devices.js`, so its settings survive a recompile or a reset,
+and simulations (walking, battery) keep running. Reloading the page starts from the defaults;
+saving setups is stage 7 (scenarios).
+
 ## Console and action log
 
 Under the display, two tabs:
@@ -167,7 +221,8 @@ about a minute because it compiles LVGL; after that only your files recompile (a
 | `vscode/` | VS Code settings for `/workspaces`: IntelliSense from the build's compile commands, and the Ctrl+Shift+B build task |
 | `web/` | The page: compile toolbar, round display with zoom and touch, error list and log. Copied into `dist/` on build |
 | `web/config.js` | Panel facts: resolution, physical diameter, full-frame time |
-| `web/devices.js` | The simulated hardware and iPhone: device states, event queues, Not responding switches |
+| `web/devices.js` | The simulated hardware and iPhone: device states, event queues, Not responding switches, the battery and motion simulations |
+| `web/devtools.js` | The dev tools panel: draws a section per device from `devices.js` and changes it |
 | `dist/` | Build output. Plain static files that any web server can host |
 
 Things that match the real watch:

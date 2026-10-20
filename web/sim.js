@@ -1,6 +1,7 @@
 // Starts the compiled watch (watch.js / watch.wasm) and draws its frames on the canvas.
 // The mouse is the touch screen; the zoom and throttle controls are under "Display".
-// The simulated hardware (web/devices.js) outlives each copy of the watch.
+// The simulated hardware (web/devices.js) outlives each copy of the watch; the dev
+// tools panel (web/devtools.js) shows and changes it.
 // When served by build/serve.py it also shows the compile toolbar, restarts the watch
 // after each good build (no page reload, so page state survives) and lists build errors.
 'use strict';
@@ -61,6 +62,7 @@ function logAction(device, text, ms) {
   dev.textContent = device.padEnd(11);
   line.append(t, dev, text);
   append(actionsEl, line);
+  tools.onAction(device, text, ms);
 }
 
 function logSeparator(text) {
@@ -85,8 +87,22 @@ document.getElementById('clearLogs').onclick = () => {
 
 // ---- Simulated hardware ----
 
-const hw = createHardware();
+const hw = createHardware({
+  onHaptic: (h) => tools.onHaptic(h),
+  onChange: () => tools.refresh(),
+});
 window.hw = hw;   // poke it from the browser's dev tools console while testing
+
+const tools = createDevtools(hw, { reset: resetWatch, usbMode: enterUsbMode });
+
+const devtoolsEl = document.getElementById('devtools');
+const showDevtools = document.getElementById('showDevtools');
+showDevtools.checked = loadPref('devtools', true);
+devtoolsEl.hidden = !showDevtools.checked;
+showDevtools.onchange = () => {
+  savePref('devtools', showDevtools.checked);
+  devtoolsEl.hidden = !showDevtools.checked;
+};
 
 // ---- Running the watch ----
 
@@ -147,10 +163,23 @@ function onSystem(what) {
     usbEl.hidden = false;
   }
 }
-document.getElementById('usbRestart').onclick = () => {
+document.getElementById('usbRestart').onclick = resetWatch;
+
+// The reset and USB mode that PB1 / PB2 in the dev tools do (as src/main.c does)
+function stopWatch() {
+  if (watch) watch._sim_stop();
+  watch = null;
+}
+function resetWatch() {
+  stopWatch();
   logSeparator('── reset ──');
   startWatch(watchVersion);
-};
+}
+function enterUsbMode() {
+  stopWatch();
+  logSeparator('── USB mode ──');
+  usbEl.hidden = false;
+}
 
 // ---- Display: zoom modes and calibration ----
 
@@ -249,6 +278,8 @@ function panelPoint(e) {
 }
 
 function sendTouch(p, down) {
+  Object.assign(hw.touch, { x: p.x, y: p.y, down });   // shown in the dev tools
+  tools.refresh();
   if (!hw.state.touch.enabled) down = false;   // touch set to Not responding in the dev tools
   touching = down;
   if (watch) watch._sim_touch(p.x, p.y, down ? 1 : 0);
