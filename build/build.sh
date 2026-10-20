@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Compile the firmware's ui/ with LVGL into dist/ (static HTML + JS + WASM).
-#   build/build.sh                 builds ../Smartwatch
+#   build/build.sh                 builds the default repo from repos.json (../Smartwatch)
 #   build/build.sh path/to/repo    builds another firmware repo
 set -euo pipefail
 
 SIM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FW_DIR="$(cd "${1:-$SIM_DIR/../Smartwatch}" && pwd)"
+DEFAULT_REPO="$(python3 "$SIM_DIR/tools/repos.py" default)"
+FW_DIR="$(cd "${1:-$SIM_DIR/../$DEFAULT_REPO}" && pwd)"
 
 # Find Emscripten: already on PATH, or in $EMSDK, or in ~/emsdk
 if ! command -v emcc >/dev/null; then
@@ -23,6 +24,7 @@ if [ ! -f "$SIM_DIR/third_party/lvgl/lvgl.h" ]; then
 fi
 
 WORK="$SIM_DIR/.build"
-emcmake cmake -S "$SIM_DIR/build" -B "$WORK" -DFW_DIR="$FW_DIR" -DCMAKE_BUILD_TYPE=Release >/dev/null
+emcmake cmake -S "$SIM_DIR/build" -B "$WORK" -DFW_DIR="$FW_DIR" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON >/dev/null   # compile_commands.json feeds VS Code IntelliSense
 cmake --build "$WORK" -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 echo "Built $FW_DIR -> $SIM_DIR/dist"

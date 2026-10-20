@@ -1,0 +1,9 @@
+{
+  "files.exclude": {
+    ".codespaces": true,
+    ".oryx": true,
+    "watch-sim/.build": true
+  },
+  "git.detectSubmodules": false,
+  "C_Cpp.default.compileCommands": "/workspaces/watch-sim/.build/compile_commands.json"
+}

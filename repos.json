@@ -1,0 +1,6 @@
+{
+  "default": "Smartwatch",
+  "repos": [
+    { "name": "Smartwatch", "github": "ParkerHiggins80/Smartwatch" }
+  ]
+}

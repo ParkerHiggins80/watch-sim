@@ -1,0 +1,22 @@
+{
+  "name": "watch-sim",
+  "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces",
+  "postCreateCommand": "bash /workspaces/watch-sim/tools/codespace-setup.sh",
+  "postStartCommand": "bash /workspaces/watch-sim/tools/start-server.sh",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "Watch Simulator", "onAutoForward": "openPreview" }
+  },
+  "customizations": {
+    "codespaces": {
+      "repositories": {
+        "ParkerHiggins80/Smartwatch": { "permissions": { "contents": "write" } }
+      }
+    },
+    "vscode": {
+      "extensions": ["ms-vscode.cpptools"]
+    }
+  }
+}
