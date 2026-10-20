@@ -14,7 +14,8 @@ Create a Codespace from this repo (Code > Codespaces > Create). GitHub will ask 
 approve write access to the repos in `repos.json`; accept, so you can push from the Codespace.
 On creation it:
 
-1. Builds the container from `.devcontainer/Dockerfile` (Emscripten 6.0.12, CMake, Python).
+1. Builds the container from `.devcontainer/Dockerfile` (Emscripten 6.0.12, CMake, Python,
+   Claude Code). Claude Code updates itself; run `claude` and log in once per Codespace.
 2. Runs `tools/codespace-setup.sh`: clones every repo in `repos.json` next to watch-sim,
    fetches LVGL, links `watch-sim/vscode/` to `/workspaces/.vscode`, and does a first build.
 3. Runs `tools/start-server.sh` each time VS Code attaches (postAttachCommand), which serves `dist/` on port 8080.

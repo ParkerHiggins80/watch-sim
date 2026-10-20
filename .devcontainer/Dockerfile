@@ -15,4 +15,9 @@ RUN git clone --depth 1 --branch ${EMSDK_VERSION} https://github.com/emscripten-
     && ./emsdk activate ${EMSDK_VERSION} \
     && rm -rf /home/vscode/emsdk/downloads
 ENV EMSDK=/home/vscode/emsdk
+
+# Claude Code (native installer). Goes in ~/.local as the dev user so it can
+# update itself; the image only pins the starting version.
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH=/home/vscode/.local/bin:${PATH}
 USER root
