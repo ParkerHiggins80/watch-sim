@@ -33,4 +33,4 @@ if [ ! -e "$ROOT/.vscode" ]; then
 fi
 
 echo "== First build"
-"$SIM_DIR/build/build.sh" || echo "warning: first build failed; fix the errors and run build/build.sh"
+python3 "$SIM_DIR/build/compile.py" || echo "warning: first build failed; fix the errors and press Compile (or Ctrl+Shift+B)"

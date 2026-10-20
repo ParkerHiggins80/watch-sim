@@ -80,6 +80,13 @@ static void loop(void)
     }
 }
 
+/* web/sim.js calls this before starting a freshly compiled watch, so the old copy
+ * stops drawing. Like pulling the battery: nothing is saved. */
+EMSCRIPTEN_KEEPALIVE void sim_stop(void)
+{
+    emscripten_cancel_main_loop();
+}
+
 int main(void)
 {
     boot_ms = emscripten_get_now();

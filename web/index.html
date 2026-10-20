@@ -6,16 +6,48 @@
 <style>
   body { margin: 0; background: #1e1e1e; color: #ccc; font: 13px system-ui, sans-serif;
          display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; }
-  #screen { width: 466px; height: 466px; background: #000; image-rendering: pixelated; }
+  #toolbar { width: 466px; max-width: 100%; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #toolbar[hidden] { display: none; }
+  #toolbar select, #toolbar button { font: inherit; color: #ccc; background: #2d2d2d;
+         border: 1px solid #444; border-radius: 3px; padding: 3px 8px; }
+  #toolbar button { background: #0e639c; border-color: #0e639c; color: #fff; cursor: pointer; }
+  #toolbar button:disabled { opacity: 0.6; cursor: default; }
+  #toolbar label { display: flex; align-items: center; gap: 4px; }
+  #status { margin-left: auto; color: #999; }
+  #status.ok { color: #89d185; }
+  #status.failed { color: #f48771; }
+  #display { position: relative; width: 466px; height: 466px; }
+  #screen { width: 466px; height: 466px; background: #000; image-rendering: pixelated; display: block; }
+  /* Build errors cover the screen (the last good build keeps running underneath) */
+  #errors { position: absolute; inset: 0; overflow: auto; padding: 12px; box-sizing: border-box;
+            background: rgba(30, 0, 0, 0.92); font: 12px ui-monospace, monospace; }
+  #errors[hidden] { display: none; }
+  #errors h2 { margin: 0 0 8px; font: bold 13px system-ui, sans-serif; color: #f48771; }
+  #errors .diag { margin: 0 0 6px; white-space: pre-wrap; word-break: break-word; }
+  #errors .where { color: #9cdcfe; }
+  #errors .error .sev { color: #f48771; }
+  #errors .warning .sev { color: #cca700; }
+  #errors details { margin-top: 10px; }
+  #errors summary { cursor: pointer; color: #999; }
+  #errors pre { white-space: pre-wrap; word-break: break-word; color: #bbb; }
   #log { width: 466px; max-width: 100%; height: 140px; margin: 0; padding: 8px; overflow: auto;
          background: #111; font: 12px ui-monospace, monospace; white-space: pre-wrap; box-sizing: border-box; }
   .err { color: #f48771; }
+  .sep { color: #666; }
 </style>
 </head>
 <body>
-  <canvas id="screen" width="466" height="466"></canvas>
+  <div id="toolbar" hidden>
+    <select id="repo" title="Firmware repo to build"></select>
+    <button id="compile">Compile</button>
+    <label title="Rebuild when a file in ui/, app/ or hal/ is saved"><input type="checkbox" id="autocompile"> Auto compile on save</label>
+    <span id="status"></span>
+  </div>
+  <div id="display">
+    <canvas id="screen" width="466" height="466"></canvas>
+    <div id="errors" hidden></div>
+  </div>
   <pre id="log"></pre>
-  <script src="watch.js"></script>
   <script src="sim.js"></script>
 </body>
 </html>

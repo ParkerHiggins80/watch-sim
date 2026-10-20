@@ -6,7 +6,7 @@ See [SPEC.md](SPEC.md) for the full plan.
 
 ## Status
 
-Stage 2 of 7: the Codespace sets itself up and opens the simulator in a VS Code pane.
+Stage 3 of 7: compile from the simulator panel or with Ctrl+Shift+B; errors show in both places.
 
 ## Codespace
 
@@ -33,6 +33,26 @@ Add it to `repos.json`, then run `tools/repos.py sync-devcontainer` to request w
 for it in `devcontainer.json`. Commit both and rebuild the Codespace (Ctrl+Shift+P >
 "Codespaces: Rebuild Container"). Setup warns if the two files disagree.
 
+## Compiling
+
+Three ways, all the same build (`build/compile.py`, which runs `build/build.sh`):
+
+- **Compile button** in the simulator panel. The dropdown next to it picks which cloned repo
+  from `repos.json` to build; changing it builds straight away.
+- **Ctrl+Shift+B** in VS Code (the "Compile watch simulator" task in `vscode/tasks.json`).
+  Errors and warnings go to the Problems panel; click one to jump to the line. It builds the
+  repo picked in the panel's dropdown.
+- **Auto compile on save**, a checkbox in the panel, off by default. Saving any `.c`/`.h` in
+  `ui/`, `app/` or `hal/`, or `prj.conf`, starts a build.
+
+When a build finishes the panel restarts the watch with the new code, without reloading the
+page. When it fails, the errors cover the screen (with the full compiler output underneath) and
+the last good build keeps running behind them. Only one build runs at a time; a request made
+during a build runs once it's done.
+
+Switching to a different repo recompiles LVGL (about a minute), because each repo's
+`prj.conf` can set different LVGL options.
+
 ## Run it locally (Mac or Linux, no container)
 
 You need Python 3, CMake (`brew install cmake`) and Emscripten (the C to WebAssembly compiler):
@@ -46,11 +66,11 @@ Clone the firmware repo next to watch-sim (`../Smartwatch`), then from the watch
 
 ```sh
 git submodule update --init   # fetches LVGL (build.sh also does this)
-build/build.sh                # builds the default repo from repos.json into dist/
-build/serve.py                # serves dist/ at http://localhost:8080
+build/serve.py                # serves dist/ at http://localhost:8080, with the Compile button
+build/compile.py              # or build from the terminal (the panel picks up the result)
 ```
 
-`build/build.sh path/to/other-repo` builds a different firmware repo. The first build takes
+`build/compile.py path/to/other-repo` builds a different firmware repo. The first build takes
 about a minute because it compiles LVGL; after that only your files recompile (a few seconds).
 `printf` output shows in the log box under the screen.
 
@@ -68,9 +88,10 @@ about a minute because it compiles LVGL; after that only your files recompile (a
 | `.devcontainer/` | Codespace image and setup hooks |
 | `tools/codespace-setup.sh`, `tools/start-server.sh` | Codespace creation and start hooks |
 | `tools/repos.py` | Reads `repos.json`; keeps `devcontainer.json` permissions in sync |
-| `build/serve.py` | Static web server with caching off, so reloads get the new build |
-| `vscode/` | VS Code settings for `/workspaces` (IntelliSense from the build's compile commands) |
-| `web/` | The page: canvas and log. Copied into `dist/` on build |
+| `build/compile.py` | The one way in to a build: takes a lock, runs `build.sh`, writes the result and parsed errors to `.build/status.json` |
+| `build/serve.py` | Serves `dist/` with caching off, plus a small `/api/` the panel uses to compile. Any static server can host `dist/`; the panel just hides the compile toolbar |
+| `vscode/` | VS Code settings for `/workspaces`: IntelliSense from the build's compile commands, and the Ctrl+Shift+B build task |
+| `web/` | The page: compile toolbar, canvas, error list and log. Copied into `dist/` on build |
 | `dist/` | Build output. Plain static files that any web server can host |
 
 Things that match the real watch:

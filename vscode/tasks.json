@@ -1,0 +1,19 @@
+{
+  // Ctrl+Shift+B runs the default build task below. It builds the repo picked in the
+  // simulator's dropdown, and the simulator restarts with the result when it finishes.
+  // $gcc reads "file:line:col: error: message" lines into the Problems panel.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Compile watch simulator",
+      "type": "shell",
+      "command": "python3 ${workspaceFolder}/watch-sim/build/compile.py",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": {
+        "base": "$gcc",
+        "fileLocation": ["autoDetect", "${workspaceFolder}"]
+      },
+      "presentation": { "reveal": "silent", "revealProblems": "onProblem", "clear": true }
+    }
+  ]
+}
