@@ -11,7 +11,8 @@ Stage 6 of 7: the dev tools panel, with every device on the watch.
 ## Codespace
 
 Create a Codespace from this repo (Code > Codespaces > Create). GitHub will ask you to
-approve write access to the repos in `repos.json`; accept, so you can push from the Codespace.
+approve access to the repos in `repos.json` (push code and open pull requests); accept, so you
+can push and open PRs from the Codespace.
 On creation it:
 
 1. Builds the container from `.devcontainer/Dockerfile` (Emscripten 6.0.12, CMake, Python,
@@ -24,12 +25,16 @@ On creation it:
 
 VS Code opens `/workspaces`, so both repos are in the file tree and in Source Control.
 
+The CMake Tools extension is kept out (`"-ms-vscode.cmake-tools"` in `devcontainer.json`). It
+would find Smartwatch's Zephyr `CMakeLists.txt`, which only builds with nRF Connect SDK, and keep
+asking which CMakeLists.txt to use. The simulator builds with Ctrl+Shift+B instead.
+
 If the pane is closed: Ports tab > port 8080 > "Preview in Editor" (the globe icon opens it
 in a browser tab instead). After a rebuild, reload the pane.
 
 ### Adding a firmware repo
 
-Add it to `repos.json`, then run `tools/repos.py sync-devcontainer` to request write access
+Add it to `repos.json`, then run `tools/repos.py sync-devcontainer` to request access
 for it in `devcontainer.json`. Commit both and rebuild the Codespace (Ctrl+Shift+P >
 "Codespaces: Rebuild Container"). Setup warns if the two files disagree.
 

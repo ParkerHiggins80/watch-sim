@@ -6,9 +6,12 @@
   },
   "git.detectSubmodules": false,
   "C_Cpp.default.compileCommands": "/workspaces/watch-sim/.build/compile_commands.json",
-  // The CMake extension would try to configure Smartwatch's Zephyr CMakeLists.txt,
+  // The CMake Tools extension would try to configure Smartwatch's Zephyr CMakeLists.txt,
   // which only builds with nRF Connect SDK. The simulator builds with Ctrl+Shift+B instead.
+  // devcontainer.json keeps the extension out of the Codespace; these settings keep it
+  // quiet if it gets installed anyway (Settings Sync, the C/C++ Extension Pack).
   "cmake.configureOnOpen": false,
   "cmake.configureOnEdit": false,
-  "cmake.automaticReconfigure": false
+  "cmake.automaticReconfigure": false,
+  "cmake.ignoreCMakeListsMissing": true
 }

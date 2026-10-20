@@ -3,7 +3,8 @@
 
   repos.py default              name of the default repo
   repos.py list                 one "name github" line per repo
-  repos.py sync-devcontainer    copy the repo list into devcontainer.json's write permissions
+  repos.py sync-devcontainer    copy the repo list into devcontainer.json's permissions
+                                (push code and open pull requests)
   repos.py check-devcontainer   exit 1 if devcontainer.json is out of date
 """
 import json
@@ -21,7 +22,8 @@ def load(path):
 
 
 def wanted_permissions(repos):
-    return {r["github"]: {"permissions": {"contents": "write"}} for r in repos["repos"]}
+    return {r["github"]: {"permissions": {"contents": "write", "pull_requests": "write"}}
+            for r in repos["repos"]}
 
 
 def main():

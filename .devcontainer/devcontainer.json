@@ -11,11 +11,11 @@
   "customizations": {
     "codespaces": {
       "repositories": {
-        "ParkerHiggins80/Smartwatch": { "permissions": { "contents": "write" } }
+        "ParkerHiggins80/Smartwatch": { "permissions": { "contents": "write", "pull_requests": "write" } }
       }
     },
     "vscode": {
-      "extensions": ["ms-vscode.cpptools"]
+      "extensions": ["ms-vscode.cpptools", "-ms-vscode.cmake-tools"]
     }
   }
 }
