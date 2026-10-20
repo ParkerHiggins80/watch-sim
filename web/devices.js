@@ -80,6 +80,18 @@ const IMU_POSES = {
   down:   { x: -1, y: 0, z: 0 },         // arm hanging at your side, hand pointing down
 };
 
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// Copies src into target, going into nested objects so references to them (the dev
+// tools hold some) stay valid. Arrays and plain values are replaced.
+function assignDeep(target, src) {
+  for (const [k, v] of Object.entries(src)) {
+    if (isObject(v) && isObject(target[k])) assignDeep(target[k], v);
+    else target[k] = isObject(v) || Array.isArray(v) ? JSON.parse(JSON.stringify(v)) : v;
+  }
+  return target;
+}
+
 // The watch has no time zone: its clocks count local time as if it were UTC
 function localEpochNow() {
   const d = new Date();
@@ -401,9 +413,70 @@ function createHardware(hooks = {}) {
     return obj;
   }
 
+  // ---- Scenarios: the whole state as plain JSON ----
+
+  // Clocks are saved relative to now (the RTC as seconds ahead of or behind this
+  // computer, the music as a position), so a scenario means the same thing whenever
+  // it's loaded.
+  function snapshot() {
+    const s = JSON.parse(JSON.stringify(state));
+    const r = state.rtc;
+    s.rtc = { enabled: r.enabled, running: r.running, driftPpm: r.driftPpm,
+              offsetS: Math.round((rtcNow() - localEpochNow()) * 10) / 10,   // used while running
+              epoch: Math.floor(rtcNow()) };                                 // used while stopped
+    s.ble.music.positionMs = musicSnapshot().elapsedMs;
+    delete s.ble.music.positionAt;
+    if (s.imu.motion === 'raising') s.imu.motion = 'still';
+    s.buttons.pb1 = s.buttons.pb2 = false;
+    return s;
+  }
+
+  // Replaces the whole state. Anything the saved state leaves out gets its default, so
+  // scenarios saved by an older simulator still load.
+  // live: the watch keeps running and hears about the change, as it would if the phone
+  // changed. Otherwise the page restarts the watch afterwards, which sends everything anyway.
+  function load(saved, { live = false } = {}) {
+    const old = { link: state.ble.link, notifs: state.ble.notifs.map((n) => n.id) };
+    stopMotion();
+    clearInterval(batteryTimer);
+    batteryTimer = null;
+
+    const next = assignDeep(defaultState(), saved);
+    const r = next.rtc;
+    r.epoch = r.running && typeof r.offsetS === 'number' ? localEpochNow() + r.offsetS : r.epoch;
+    r.anchorMs = Date.now();
+    delete r.offsetS;
+    next.ble.music.positionAt = Date.now();
+    next.buttons.pb1 = next.buttons.pb2 = false;
+    const pins = CHARGER_STATES[next.charger.mode] || CHARGER_STATES.no_input;
+    next.charger.stat1 = pins.stat1;
+    next.charger.stat2 = pins.stat2;
+    for (const k of Object.keys(state)) if (!(k in next)) delete state[k];
+    assignDeep(state, next);
+
+    if (state.imu.motion === 'walking') startWalking();
+    else state.imu.motion = 'still';
+    if (state.fuel_gauge.sim.running) runBattery(true);
+
+    if (live) {
+      if (state.ble.link !== old.link) {
+        queue({ type: BLE_EVENT.LINK, link: BLE_LINKS.indexOf(state.ble.link) });
+        if (bonded()) onBonded();
+      } else if (bonded()) {
+        // Same link: the phone clears what it had and posts what the scenario has
+        for (const id of old.notifs) queue({ type: BLE_EVENT.NOTIF_REMOVED, notif: { id } });
+        for (const notif of state.ble.notifs) queue({ type: BLE_EVENT.NOTIF_ADDED, notif });
+        queue({ type: BLE_EVENT.MUSIC, music: musicSnapshot() });
+      }
+    }
+    changed();
+  }
+
   return {
     state,
     touch,
+    snapshot,
+    load,
 
     // ---- Used by the C fakes ----
     get(device, path) {

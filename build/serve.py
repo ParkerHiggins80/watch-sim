@@ -11,16 +11,23 @@ API is missing, so dist/ still works on a plain static server.
   POST /api/build        start a build of the selected repo
   POST /api/select       {"repo": name}  pick the repo to build (Ctrl+Shift+B follows it too)
   POST /api/autocompile  {"enabled": bool}  rebuild when a firmware source file is saved
+
+  GET  /api/scenarios          the selected repo's saved dev tools setups (scenarios/*.json)
+  GET  /api/scenario?file=x    one of them
+  POST /api/scenario           {"name": ..., "state": {...}}  save (overwrites one with the same name)
+  POST /api/scenario-delete    {"file": ...}
 """
 import fcntl
 import functools
 import http.server
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 
 SIM_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(SIM_DIR)
@@ -38,6 +45,38 @@ def cloned_repos():
     with open(os.path.join(SIM_DIR, "repos.json")) as f:
         repos = json.load(f)["repos"]
     return [r["name"] for r in repos if os.path.isfile(os.path.join(ROOT, r["name"], "prj.conf"))]
+
+
+# Scenarios live in the firmware repo, so they're committed with it and follow you between machines
+SCENARIO_DIR = "scenarios"
+SCENARIO_FILE = re.compile(r"^[a-z0-9][a-z0-9-]*\.json$")
+
+
+def scenario_dir():
+    return os.path.join(ROOT, builder.default_repo(), SCENARIO_DIR)
+
+
+def scenario_file(name):
+    """'Low battery while charging' -> 'low-battery-while-charging.json'"""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:60]
+    return (slug or "scenario") + ".json"
+
+
+def list_scenarios():
+    found = []
+    try:
+        names = sorted(os.listdir(scenario_dir()))
+    except OSError:
+        names = []
+    for n in names:
+        if not SCENARIO_FILE.match(n):
+            continue
+        try:
+            with open(os.path.join(scenario_dir(), n)) as f:
+                found.append({"file": n, "name": json.load(f).get("name") or n[:-5]})
+        except (OSError, ValueError):
+            found.append({"file": n, "name": n[:-5], "error": "not valid JSON"})
+    return found
 
 
 def builder_alive():
@@ -143,6 +182,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_json(status)
         elif path == "/api/repos":
             self.send_json({"repos": cloned_repos(), "selected": builder.default_repo()})
+        elif path == "/api/scenarios":
+            self.send_json({"dir": f"{builder.default_repo()}/{SCENARIO_DIR}", "scenarios": list_scenarios()})
+        elif path == "/api/scenario":
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = (query.get("file") or [""])[0]
+            if not SCENARIO_FILE.match(name):
+                return self.send_json({"error": "bad file name"}, 400)
+            try:
+                with open(os.path.join(scenario_dir(), name)) as f:
+                    self.send_json(json.load(f))
+            except (OSError, ValueError) as e:
+                self.send_json({"error": f"{name}: {e}"}, 404)
         else:
             super().do_GET()
 
@@ -163,6 +214,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"ok": True})
         elif path == "/api/autocompile":
             BUILDS.autocompile = bool(body.get("enabled"))
+            self.send_json({"ok": True})
+        elif path == "/api/scenario":
+            name = str(body.get("name") or "").strip()
+            if not name or not isinstance(body.get("state"), dict):
+                return self.send_json({"error": "a scenario needs a name and a state"}, 400)
+            file = scenario_file(name)
+            os.makedirs(scenario_dir(), exist_ok=True)
+            with open(os.path.join(scenario_dir(), file), "w") as f:
+                json.dump(body, f, indent=2, ensure_ascii=False)   # readable diffs in git
+                f.write("\n")
+            self.send_json({"ok": True, "file": file})
+        elif path == "/api/scenario-delete":
+            file = str(body.get("file") or "")
+            if not SCENARIO_FILE.match(file):
+                return self.send_json({"error": "bad file name"}, 400)
+            try:
+                os.remove(os.path.join(scenario_dir(), file))
+            except OSError as e:
+                return self.send_json({"error": str(e)}, 404)
             self.send_json({"ok": True})
         else:
             self.send_error(404)

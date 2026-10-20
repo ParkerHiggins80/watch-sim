@@ -38,6 +38,12 @@ static lv_disp_drv_t disp_drv;
 static uint8_t panel[HOR_RES * VER_RES * 4];
 static int panel_dirty;
 
+/* The areas flushed since the last frame was presented (x1, y1, x2, y2 each), for the
+ * redraw overlay. If there are more, the last one grows to cover them. */
+#define MAX_AREAS 64
+static int32_t areas[MAX_AREAS * 4];
+static int area_count;
+
 static double boot_ms;
 
 /* Touch, as last reported by web/sim.js. press_latched keeps a quick click that starts
@@ -52,10 +58,25 @@ uint32_t sim_uptime_ms(void)
     return (uint32_t)(emscripten_get_now() - boot_ms);
 }
 
-/* Hands a finished frame to web/sim.js, which draws it on the canvas */
-EM_JS(void, js_present, (const uint8_t *px, int w, int h), {
-    if (Module.onFrame) Module.onFrame(px, w, h);
+/* Hands a finished frame to web/sim.js, which draws it on the canvas, plus the
+ * areas that were redrawn for the overlay */
+EM_JS(void, js_present, (const uint8_t *px, int w, int h, const int32_t *areas, int count), {
+    if (Module.onFrame) Module.onFrame(px, w, h, areas, count);
 });
+
+static void note_area(const lv_area_t *a)
+{
+    if (area_count < MAX_AREAS) {
+        int32_t *r = &areas[area_count++ * 4];
+        r[0] = a->x1; r[1] = a->y1; r[2] = a->x2; r[3] = a->y2;
+        return;
+    }
+    int32_t *r = &areas[(MAX_AREAS - 1) * 4];
+    if (a->x1 < r[0]) r[0] = a->x1;
+    if (a->y1 < r[1]) r[1] = a->y1;
+    if (a->x2 > r[2]) r[2] = a->x2;
+    if (a->y2 > r[3]) r[3] = a->y2;
+}
 
 /* CO5300 rule: every redraw area must start on even x/y and be even in size.
  * The watch sets this in src/main.c; the simulated panel has the same rule. */
@@ -83,6 +104,7 @@ static void flush_cb(lv_disp_drv_t *drv, const lv_area_t *a, lv_color_t *px)
         }
     }
     panel_dirty = 1;
+    note_area(a);
 
     /* On the watch, flushing is a blocking SPI write: the main loop waits until the
      * strip has been sent. The time grows with the number of pixels, so a strip of
@@ -133,7 +155,8 @@ static void loop(void)
 
     if (panel_dirty) {
         panel_dirty = 0;
-        js_present(panel, HOR_RES, VER_RES);
+        js_present(panel, HOR_RES, VER_RES, areas, area_count);
+        area_count = 0;
     }
 }
 

@@ -6,7 +6,7 @@ See [SPEC.md](SPEC.md) for the full plan.
 
 ## Status
 
-Stage 6 of 7: the dev tools panel, with every device on the watch.
+Stage 7 of 7: scenarios and the redraw region overlay. All stages are done.
 
 ## Codespace
 
@@ -76,6 +76,11 @@ Switching to a different repo recompiles LVGL (about a minute), because each rep
   the throttle on, every redraw blocks the main loop for its share of that: a full-screen
   redraw takes 116 ms, a small label a few ms. Animations then stutter where they would on
   the watch. Rendering time on the nRF52840 is not included, so the real watch can be a bit slower.
+- **Show redraw regions**: every area LVGL sends to the panel flashes pink and fades out, like
+  "paint flashing" in a browser's dev tools. With LVGL's 10 % render buffer, a full-screen redraw
+  shows as about 11 strips. The line next to the checkbox gives the last redraw's share of the
+  screen and roughly how long it would take on the watch (that share of 116 ms). A clock that
+  redraws the whole screen every second when only the digits change shows up here.
 
 Touch here is wired straight into LVGL by `sim/main.c`. On the watch, the CST820 touch controller
 needs its own LVGL input device in your firmware.
@@ -167,8 +172,32 @@ checkbox hides it). One section per device; click a title to fold it. Each secti
 - **Heart rate and microphone**: placeholders until they get hal/ headers.
 
 The panel only shows what's in `web/devices.js`, so its settings survive a recompile or a reset,
-and simulations (walking, battery) keep running. Reloading the page starts from the defaults;
-saving setups is stage 7 (scenarios).
+and simulations (walking, battery) keep running. Reloading the page starts from the defaults
+unless you load a scenario.
+
+## Scenarios
+
+The **Scenarios** section at the top of the dev tools saves the whole setup under a name:
+every device's state, Enabled / Not responding, the notifications on the phone, the music,
+running simulations. Type a name and press **Save**. It's written as
+`scenarios/<name>.json` in the firmware repo picked in the toolbar (for example
+`Smartwatch/scenarios/low-battery-while-charging.json`). Commit it with your code and it's
+there on any machine. Saving with the same name overwrites it. **Delete** needs two clicks.
+
+Pick one and press **Load**. With **Restart the watch on load** (the default), the firmware
+starts fresh in that setup, the way the watch would boot into it. Untick it to swap the hardware
+under the running watch. It then gets the events a phone would send: a link change, or
+notifications removed and added, and the music.
+
+- The RTC is saved as seconds ahead of or behind the real clock, so "RTC 30 s fast" is still 30 s
+  fast next week. The music is saved as a position in the track.
+- Anything a scenario leaves out gets its default, so files saved by an older simulator still
+  load. They're plain JSON, so you can also write or edit them by hand.
+- **Examples** (built in, in `web/scenarios.js`): defaults, low battery while charging,
+  notification burst while disconnected, incoming call while music plays, every I²C chip not
+  responding, and out walking with the battery draining. Load one and Save it to get a copy in your repo.
+- **Export file / Import file** download and open the same JSON. Use them when the page is on a
+  plain static server, where it can't write to the repo.
 
 ## Console and action log
 
@@ -222,12 +251,13 @@ about a minute because it compiles LVGL; after that only your files recompile (a
 | `tools/codespace-setup.sh`, `tools/start-server.sh` | Codespace creation and start hooks |
 | `tools/repos.py` | Reads `repos.json`; keeps `devcontainer.json` permissions in sync |
 | `build/compile.py` | The one way in to a build: takes a lock, runs `build.sh`, writes the result and parsed errors to `.build/status.json` |
-| `build/serve.py` | Serves `dist/` with caching off, plus a small `/api/` the panel uses to compile. Any static server can host `dist/`; the panel just hides the compile toolbar |
+| `build/serve.py` | Serves `dist/` with caching off, plus a small `/api/` the panel uses to compile and to read and write scenarios. Any static server can host `dist/`; the panel then hides the compile toolbar and only exports and imports scenarios |
 | `vscode/` | VS Code settings for `/workspaces`: IntelliSense from the build's compile commands, and the Ctrl+Shift+B build task |
 | `web/` | The page: compile toolbar, round display with zoom and touch, error list and log. Copied into `dist/` on build |
 | `web/config.js` | Panel facts: resolution, physical diameter, full-frame time |
 | `web/devices.js` | The simulated hardware and iPhone: device states, event queues, Not responding switches, the battery and motion simulations |
 | `web/devtools.js` | The dev tools panel: draws a section per device from `devices.js` and changes it |
+| `web/scenarios.js` | The Scenarios section and the built-in examples |
 | `dist/` | Build output. Plain static files that any web server can host |
 
 Things that match the real watch:

@@ -94,6 +94,7 @@ const hw = createHardware({
 window.hw = hw;   // poke it from the browser's dev tools console while testing
 
 const tools = createDevtools(hw, { reset: resetWatch, usbMode: enterUsbMode });
+const scenarios = createScenarios(hw, { reset: resetWatch });
 
 const devtoolsEl = document.getElementById('devtools');
 const showDevtools = document.getElementById('showDevtools');
@@ -135,10 +136,12 @@ function startWatch(version) {
       print: (text) => log(text),
       printErr: (text) => log(text, 'err'),
 
-      // sim/main.c calls this after LVGL redraws. px points at 466x466 RGBA bytes in WASM memory.
-      onFrame(px, w, h) {
+      // sim/main.c calls this after LVGL redraws. px points at 466x466 RGBA bytes in WASM
+      // memory; areas at count rectangles (x1, y1, x2, y2) that were redrawn.
+      onFrame(px, w, h, areas, count) {
         const bytes = new Uint8ClampedArray(this.HEAPU8.buffer, px, w * h * 4);
         ctx.putImageData(new ImageData(bytes, w, h), 0, 0);
+        if (redrawEl.checked) showRedraw(new Int32Array(this.HEAPU8.buffer, areas, count * 4));
       },
     }).then((m) => {
       watch = m;
@@ -260,6 +263,58 @@ throttleEl.checked = loadPref('throttle', false);
 throttleEl.onchange = () => {
   savePref('throttle', throttleEl.checked);
   if (watch) watch._sim_set_throttle(throttleEl.checked ? PANEL.fullFrameMs : 0);
+};
+
+// ---- Redraw regions ----
+// Each area LVGL sent to the panel flashes and fades out, like "paint flashing" in a
+// browser's dev tools. A redraw that covers more than it needs to shows up straight away,
+// and the line beside the checkbox says what the last one would cost on the watch.
+
+const redrawEl = document.getElementById('showRedraw');
+const overlay = document.getElementById('overlay');
+const octx = overlay.getContext('2d');
+const redrawInfo = document.getElementById('redrawInfo');
+const FLASH_MS = 600;
+let flashes = [];   // { x, y, w, h, at }
+let flashing = false;
+
+function showRedraw(a) {
+  const now = performance.now();
+  let px = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    const w = a[i + 2] - a[i] + 1, h = a[i + 3] - a[i + 1] + 1;
+    flashes.push({ x: a[i], y: a[i + 1], w, h, at: now });
+    px += w * h;
+  }
+  const share = px / (PANEL.width * PANEL.height);
+  redrawInfo.textContent = `last redraw: ${a.length / 4} strip${a.length > 4 ? 's' : ''}, ` +
+    `${Math.round(share * 100)}% of the screen, ≈ ${Math.round(share * PANEL.fullFrameMs)} ms on the watch`;
+  if (!flashing) requestAnimationFrame(drawFlashes);
+  flashing = true;
+}
+
+function drawFlashes() {
+  const now = performance.now();
+  flashes = flashes.filter((f) => now - f.at < FLASH_MS);
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  for (const f of flashes) {
+    const fade = 1 - (now - f.at) / FLASH_MS;
+    octx.fillStyle = `rgba(255, 0, 200, ${0.35 * fade})`;
+    octx.fillRect(f.x, f.y, f.w, f.h);
+    octx.strokeStyle = `rgba(255, 120, 230, ${fade})`;
+    octx.strokeRect(f.x + 0.5, f.y + 0.5, f.w - 1, f.h - 1);
+  }
+  flashing = flashes.length > 0;
+  if (flashing) requestAnimationFrame(drawFlashes);
+}
+
+redrawEl.checked = loadPref('redraw', false);
+overlay.hidden = !redrawEl.checked;
+redrawEl.onchange = () => {
+  savePref('redraw', redrawEl.checked);
+  overlay.hidden = !redrawEl.checked;
+  redrawInfo.textContent = '';
+  flashes = [];
 };
 
 // ---- Touch: the mouse acts as a finger on the round glass ----
@@ -405,9 +460,10 @@ async function initCompile() {
   }
   toolbar.hidden = false;
   await loadRepos();
+  scenarios.setServer(true);
 
   compileBtn.onclick = () => api('build', {});
-  repoEl.onchange = () => api('select', { repo: repoEl.value });
+  repoEl.onchange = () => api('select', { repo: repoEl.value }).then(() => scenarios.refreshList());
   autoEl.onchange = () => api('autocompile', { enabled: autoEl.checked });
 
   let seen = status.id || 0;
