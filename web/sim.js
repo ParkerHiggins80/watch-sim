@@ -1,5 +1,6 @@
 // Starts the compiled watch (watch.js / watch.wasm) and draws its frames on the canvas.
 // The mouse is the touch screen; the zoom and throttle controls are under "Display".
+// The simulated hardware (web/devices.js) outlives each copy of the watch.
 // When served by build/serve.py it also shows the compile toolbar, restarts the watch
 // after each good build (no page reload, so page state survives) and lists build errors.
 'use strict';
@@ -31,21 +32,73 @@ function savePref(key, value) {
   } catch { /* not saved; fine */ }
 }
 
+function append(box, line) {
+  const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+  box.appendChild(line);
+  while (box.childElementCount > 2000) box.firstChild.remove();
+  if (atBottom) box.scrollTop = box.scrollHeight;   // don't jump while you're reading older lines
+}
+
+// Console: everything the firmware prints, like the RTT log on the watch
 function log(text, cls) {
   const line = document.createElement('div');
   line.textContent = text;
   if (cls) line.className = cls;
-  logEl.appendChild(line);
-  logEl.scrollTop = logEl.scrollHeight;
+  append(logEl, line);
 }
+
+// Action log: every call from the firmware to the hardware layer, with the time since boot
+const actionsEl = document.getElementById('actions');
+
+function logAction(device, text, ms) {
+  const line = document.createElement('div');
+  line.className = 'act' + (/ -> -/.test(text) ? ' err' : '');
+  const t = document.createElement('span');
+  t.className = 't';
+  t.textContent = (ms / 1000).toFixed(3).padStart(9) + '  ';
+  const dev = document.createElement('span');
+  dev.className = 'dev';
+  dev.textContent = device.padEnd(11);
+  line.append(t, dev, text);
+  append(actionsEl, line);
+}
+
+function logSeparator(text) {
+  log(text, 'sep');
+  const line = document.createElement('div');
+  line.className = 'sep';
+  line.textContent = text;
+  append(actionsEl, line);
+}
+
+for (const tab of document.querySelectorAll('.tabs [data-tab]')) {
+  tab.onclick = () => {
+    for (const t of document.querySelectorAll('.tabs [data-tab]')) {
+      t.classList.toggle('active', t === tab);
+      document.getElementById(t.dataset.tab).hidden = t !== tab;
+    }
+  };
+}
+document.getElementById('clearLogs').onclick = () => {
+  (logEl.hidden ? actionsEl : logEl).replaceChildren();
+};
+
+// ---- Simulated hardware ----
+
+const hw = createHardware();
+window.hw = hw;   // poke it from the browser's dev tools console while testing
 
 // ---- Running the watch ----
 
 let watch = null;   // the running copy of the compiled firmware
+let watchVersion = 0;
+const usbEl = document.getElementById('usb');
 
 // Loads watch.js (which defines createWatch) and starts a fresh copy. The old copy is
 // stopped first, like pressing reset on the real watch.
 function startWatch(version) {
+  watchVersion = version;
+  usbEl.hidden = true;
   const script = document.createElement('script');
   script.src = 'watch.js?v=' + version;
   script.onload = () => {
@@ -54,7 +107,12 @@ function startWatch(version) {
       watch._sim_stop();
       watch = null;
     }
+    hw.reset();   // like a real reset: pending interrupts and events are lost
     createWatch({
+      hw,
+      onAction: logAction,
+      onSystem,
+
       locateFile: (file) => file + '?v=' + version,   // fetch the matching watch.wasm
 
       // printf() in C ends up here
@@ -78,6 +136,21 @@ function startWatch(version) {
   };
   document.body.appendChild(script);
 }
+
+// system_reboot() and system_enter_usb_mode() from the firmware
+function onSystem(what) {
+  watch = null;   // the C side has already stopped itself
+  if (what === 'reboot') {
+    logSeparator('── reset ──');
+    setTimeout(() => startWatch(watchVersion), 200);
+  } else {
+    usbEl.hidden = false;
+  }
+}
+document.getElementById('usbRestart').onclick = () => {
+  logSeparator('── reset ──');
+  startWatch(watchVersion);
+};
 
 // ---- Display: zoom modes and calibration ----
 
@@ -176,6 +249,7 @@ function panelPoint(e) {
 }
 
 function sendTouch(p, down) {
+  if (!hw.state.touch.enabled) down = false;   // touch set to Not responding in the dev tools
   touching = down;
   if (watch) watch._sim_touch(p.x, p.y, down ? 1 : 0);
 }
@@ -276,7 +350,7 @@ function showStatus(s) {
 function onBuildDone(s) {
   if (s.state === 'ok') {
     errorsEl.hidden = true;
-    log(`── build ${s.id}: restarted ──`, 'sep');
+    logSeparator(`── build ${s.id}: restarted ──`);
     for (const d of s.diagnostics || []) {
       log(`${shortPath(d.file, s.repo)}:${d.line}:${d.col}: warning: ${d.message}`, 'err');
     }

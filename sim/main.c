@@ -3,7 +3,8 @@
  *
  * It sets up LVGL with a display that matches the watch (466x466, RGB565, a render
  * buffer of CONFIG_LV_Z_VDB_SIZE percent of the screen, the CO5300 even-area rule),
- * calls ui_init() from the firmware's ui/ folder, then runs the main loop. The mouse is a
+ * calls ui_init() from the firmware's ui/ folder and app_init() from app/, then runs
+ * the main loop (app_tick(), then LVGL). The mouse is a
  * touch pointer, and an optional throttle makes each redraw take as long as the real
  * panel's SPI transfer. The browser
  * calls loop() once per animation frame (about 60 times a second); everything LVGL
@@ -16,6 +17,12 @@
 
 #include "sim_time.h"
 #include "ui_api.h"
+
+/* app/ is optional, so a firmware repo without it still builds */
+#if __has_include("app/app.h")
+#include "app/app.h"
+#define HAVE_APP 1
+#endif
 
 #define HOR_RES 466
 #define VER_RES 466
@@ -119,6 +126,9 @@ EMSCRIPTEN_KEEPALIVE void sim_set_throttle(int full_frame_ms)
 
 static void loop(void)
 {
+#ifdef HAVE_APP
+    app_tick();
+#endif
     lv_timer_handler();
 
     if (panel_dirty) {
@@ -159,6 +169,9 @@ int main(void)
            LVGL_VERSION_MINOR, LVGL_VERSION_PATCH, HOR_RES, VER_RES, LV_COLOR_DEPTH);
 
     ui_init();
+#ifdef HAVE_APP
+    app_init();
+#endif
 
     /* 0 = run at the browser's frame rate; 0 = return from main instead of blocking */
     emscripten_set_main_loop(loop, 0, 0);

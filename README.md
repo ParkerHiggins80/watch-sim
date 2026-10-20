@@ -6,7 +6,7 @@ See [SPEC.md](SPEC.md) for the full plan.
 
 ## Status
 
-Stage 4 of 7: round display with zoom modes, mouse as touch, and the redraw throttle.
+Stage 5 of 7: hal/ and app/ in the firmware, simulated hardware behind them, console and action log.
 
 ## Codespace
 
@@ -75,6 +75,57 @@ Switching to a different repo recompiles LVGL (about a minute), because each rep
 Touch here is wired straight into LVGL by `sim/main.c`. On the watch, the CST820 touch controller
 needs its own LVGL input device in your firmware.
 
+## Firmware layout: ui/, app/, hal/
+
+The simulator compiles the firmware's `ui/` and `app/` folders. Neither may use Zephyr, so the
+hardware sits behind the headers in `hal/`:
+
+| Header | Device | In the simulator |
+|---|---|---|
+| `hal/time.h` | uptime in ms | time since the simulated watch started |
+| `hal/system.h` | reboot, USB mode | restarts the watch / shows a USB mode screen |
+| `hal/buttons.h` | PB1, PB2 | dev tools buttons |
+| `hal/imu.h` | LSM6DSO32 | sliders in g; ±4 g full scale and 0.122 mg steps like `src/main.c` |
+| `hal/haptic.h` | DRV2605L | an on-screen pulse and the action log |
+| `hal/fuel_gauge.h` | MAX17048 | voltage and percent; Not responding by default, like the board |
+| `hal/charger.h` | BQ25185 STAT1/STAT2, USB power | pin levels |
+| `hal/rtc.h` | RV-3028 | settable clock with drift; Not responding by default, like the board |
+| `hal/ble.h` | link, CTS, ANCS, AMS | the dev tools play the iPhone |
+
+Rules the headers follow:
+
+- Every function returns 0 or a negative error code. A device set to Not responding returns
+  `-EIO`. Compare against the names (`-EIO`), not numbers: the simulator's C library numbers
+  them differently from Zephyr's (`-EIO` is -29 here, -5 on the watch).
+- Nothing calls back into your code. Interrupts and Bluetooth arrive as events that `app_tick()`
+  takes with `imu_get_events()` and `ble_poll()`, so screens are only touched from the main loop.
+- Include them as `"hal/imu.h"`, with the repo root on the include path. Never add `hal/`
+  itself, or `hal/time.h` would hide the C library's `<time.h>`.
+- Bluetooth text is cut at 32 bytes (`BLE_TEXT_MAX`), because NCS 2.6's ANCS client accepts no
+  more per field. The simulator cuts it the same way.
+
+Both mains call `app_init()` once after `ui_init()`, then `app_tick()` every loop before LVGL.
+The watch-side implementations of `hal/` (real drivers in `src/`) are yours to write.
+
+Each `hal/x.h` is matched by `fakes/x.c` in this repo. If you change a header, the matching fake
+has to change too (the build says so if it doesn't compile). A header with no fake gives a build
+warning.
+
+## Console and action log
+
+Under the display, two tabs:
+
+- **Console**: everything the firmware prints (`printf`), like the RTT log on the watch.
+- **Action log**: every call from the firmware to the hardware layer that does something
+  (init, buzz, set the RTC, accept a call, music command, reboot, USB mode), with the time since
+  boot and the result. Failed calls are red. Reads (accelerometer, battery) aren't listed, since
+  code usually polls those constantly.
+
+The simulated hardware lives in the page (`web/devices.js`), so it keeps its state when the
+watch restarts after a recompile or reset. A reset loses what a real reset loses: pending
+interrupts and queued Bluetooth events. If the phone was bonded, it reconnects and sends the
+time, the music state and the notifications already on it (flagged pre-existing), like an iPhone.
+
 ## Run it locally (Mac or Linux, no container)
 
 You need Python 3, CMake (`brew install cmake`) and Emscripten (the C to WebAssembly compiler):
@@ -103,8 +154,9 @@ about a minute because it compiles LVGL; after that only your files recompile (a
 | `third_party/lvgl` | LVGL 8.3.7, the exact commit NCS 2.6 uses (git submodule) |
 | `tools/gen_lv_autoconf.py` | Reads the firmware's `prj.conf` and runs it through LVGL's Kconfig, like Zephyr does, so the LVGL options (color depth, fonts, widgets) always match the watch |
 | `build/lv_conf.h` | Simulator copy of Zephyr's `lv_conf.h`: memory, ticks, printf |
-| `build/CMakeLists.txt`, `build/build.sh` | Compiles LVGL, `sim/` and the firmware's `ui/` into `dist/` |
-| `sim/main.c` | The simulator's main: sets up a display and touch input like the watch's, calls `ui_init()`, runs the main loop, and does the flush throttle |
+| `build/CMakeLists.txt`, `build/build.sh` | Compiles LVGL, `sim/`, `fakes/` and the firmware's `ui/` and `app/` into `dist/` |
+| `sim/main.c` | The simulator's main: sets up a display and touch input like the watch's, calls `ui_init()` and `app_init()`, runs the main loop, and does the flush throttle |
+| `fakes/` | Simulator versions of the firmware's `hal/` headers. `fake.c` is the bridge to `web/devices.js` |
 | `sim/lvgl_mem.c` | LVGL's heap, capped at `CONFIG_LV_Z_MEM_POOL_SIZE` (16 KB) like on the watch |
 | `repos.json` | Firmware repos to clone, and which one builds by default |
 | `.devcontainer/` | Codespace image and setup hooks |
@@ -115,6 +167,7 @@ about a minute because it compiles LVGL; after that only your files recompile (a
 | `vscode/` | VS Code settings for `/workspaces`: IntelliSense from the build's compile commands, and the Ctrl+Shift+B build task |
 | `web/` | The page: compile toolbar, round display with zoom and touch, error list and log. Copied into `dist/` on build |
 | `web/config.js` | Panel facts: resolution, physical diameter, full-frame time |
+| `web/devices.js` | The simulated hardware and iPhone: device states, event queues, Not responding switches |
 | `dist/` | Build output. Plain static files that any web server can host |
 
 Things that match the real watch:

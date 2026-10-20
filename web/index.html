@@ -42,10 +42,24 @@
   #errors summary { cursor: pointer; color: #999; }
   #errors pre { white-space: pre-wrap; word-break: break-word; color: #bbb; }
 
-  #log { flex: none; height: 140px; margin: 0; padding: 8px; overflow: auto;
-         background: #111; font: 12px ui-monospace, monospace; white-space: pre-wrap; box-sizing: border-box; }
+  /* USB mode: the watch rebooted into its bootloader */
+  #usb { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
+         align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.85); text-align: center; }
+  #usb[hidden] { display: none; }
+
+  /* Console (what the firmware prints) and action log (its calls to the hardware) */
+  #logs { flex: none; display: flex; flex-direction: column; }
+  .tabs { display: flex; gap: 2px; }
+  .tabs button { border-radius: 3px 3px 0 0; border-bottom: none; background: #252526; }
+  .tabs button.active { background: #111; color: #fff; }
+  .tabs .clear { margin-left: auto; border-radius: 3px; border-bottom: 1px solid #444; padding: 1px 8px; }
+  .logbox { height: 140px; margin: 0; padding: 8px; overflow: auto; background: #111;
+            font: 12px ui-monospace, monospace; white-space: pre-wrap; box-sizing: border-box; }
+  .logbox[hidden] { display: none; }
   .err { color: #f48771; }
   .sep { color: #666; }
+  .act .t { color: #666; }
+  .act .dev { color: #c586c0; }
 
   /* Calibration: hold a credit card to the screen and size the rectangle to match */
   dialog { background: #252526; color: #ccc; border: 1px solid #444; border-radius: 6px; max-width: 90vw; }
@@ -75,8 +89,20 @@
   <div id="display">
     <div id="watch"><canvas id="screen" width="466" height="466"></canvas></div>
     <div id="errors" hidden></div>
+    <div id="usb" hidden>
+      <div><b>USB mode</b><br>The watch rebooted into its bootloader, ready to be flashed.</div>
+      <button id="usbRestart">Restart watch</button>
+    </div>
   </div>
-  <pre id="log"></pre>
+  <div id="logs">
+    <div class="tabs">
+      <button data-tab="log" class="active">Console</button>
+      <button data-tab="actions">Action log</button>
+      <button id="clearLogs" class="clear" title="Clear the visible log">Clear</button>
+    </div>
+    <pre id="log" class="logbox"></pre>
+    <div id="actions" class="logbox" hidden></div>
+  </div>
 
   <dialog id="calibration">
     <div>Hold a credit card (or any bank or ID card, 85.60 × 53.98 mm) flat against the screen<br>
@@ -91,6 +117,7 @@
   </dialog>
 
   <script src="config.js"></script>
+  <script src="devices.js"></script>
   <script src="sim.js"></script>
 </body>
 </html>

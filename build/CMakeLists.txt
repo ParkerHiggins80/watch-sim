@@ -1,4 +1,4 @@
-# Builds the simulator: LVGL + the firmware's ui/ + sim/ -> WebAssembly in dist/.
+# Builds the simulator: LVGL + the firmware's ui/ and app/ + fakes/ + sim/ -> WebAssembly in dist/.
 # Run through build/build.sh, which sets up Emscripten and picks the firmware repo.
 cmake_minimum_required(VERSION 3.20)
 project(watch_sim C)
@@ -36,10 +36,24 @@ target_compile_options(lvgl PRIVATE -O2 -w)
 add_dependencies(lvgl lv_autoconf)
 
 # The firmware's portable code. CONFIGURE_DEPENDS picks up new .c files on each build.
-file(GLOB_RECURSE FW_SOURCES CONFIGURE_DEPENDS ${FW_DIR}/ui/*.c)
+file(GLOB_RECURSE FW_SOURCES CONFIGURE_DEPENDS ${FW_DIR}/ui/*.c ${FW_DIR}/app/*.c)
 
-add_executable(watch ${SIM_DIR}/sim/main.c ${FW_SOURCES})
-target_include_directories(watch PRIVATE ${FW_DIR}/ui)
+# A fake for each hal/ header the firmware has (fakes/imu.c for hal/imu.h, ...)
+set(FAKE_SOURCES ${SIM_DIR}/fakes/fake.c)
+file(GLOB HAL_HEADERS CONFIGURE_DEPENDS ${FW_DIR}/hal/*.h)
+foreach(header ${HAL_HEADERS})
+  get_filename_component(name ${header} NAME_WE)
+  if(EXISTS ${SIM_DIR}/fakes/${name}.c)
+    list(APPEND FAKE_SOURCES ${SIM_DIR}/fakes/${name}.c)
+  else()
+    message(WARNING "hal/${name}.h has no simulator fake (fakes/${name}.c); calls to it won't link")
+  endif()
+endforeach()
+
+add_executable(watch ${SIM_DIR}/sim/main.c ${FW_SOURCES} ${FAKE_SOURCES})
+# Firmware code includes "hal/imu.h", "app/app.h" and "ui_api.h". Only the repo root goes on
+# the path, never hal/ itself, or hal/time.h would hide the C library's <time.h>.
+target_include_directories(watch PRIVATE ${FW_DIR}/ui ${FW_DIR} ${SIM_DIR}/fakes)
 target_link_libraries(watch PRIVATE lvgl)
 # Close to Zephyr's flags, so code that warns there warns here
 target_compile_options(watch PRIVATE -O1 -std=c99 -Wall -Wno-pointer-sign -Wpointer-arith
