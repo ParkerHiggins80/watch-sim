@@ -17,7 +17,7 @@ On creation it:
 1. Builds the container from `.devcontainer/Dockerfile` (Emscripten 6.0.12, CMake, Python).
 2. Runs `tools/codespace-setup.sh`: clones every repo in `repos.json` next to watch-sim,
    fetches LVGL, links `watch-sim/vscode/` to `/workspaces/.vscode`, and does a first build.
-3. Runs `tools/start-server.sh` on every start, which serves `dist/` on port 8080.
+3. Runs `tools/start-server.sh` each time VS Code attaches (postAttachCommand), which serves `dist/` on port 8080.
    Codespaces notices the port and opens the simulator in a Simple Browser pane.
    Drag that tab next to your code.
 

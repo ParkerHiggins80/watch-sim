@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Starts the simulator web server in the background (postStartCommand in devcontainer.json).
-# Codespaces sees port 8080 open and shows the simulator in a VS Code Simple Browser pane.
+# Starts the simulator web server in the background (postAttachCommand in devcontainer.json).
+# It runs once VS Code is connected, so Codespaces sees port 8080 appear and opens the
+# simulator in a Simple Browser pane (onAutoForward: openPreview). Don't move this to
+# postStartCommand or add 8080 to forwardPorts: the port is then opened before VS Code
+# is attached, or forwarded statically, and the pane never opens.
 SIM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 mkdir -p "$SIM_DIR/.build"
 if ! (exec 3<>/dev/tcp/127.0.0.1/8080) 2>/dev/null; then

@@ -4,8 +4,7 @@
   "remoteUser": "vscode",
   "workspaceFolder": "/workspaces",
   "postCreateCommand": "bash /workspaces/watch-sim/tools/codespace-setup.sh",
-  "postStartCommand": "bash /workspaces/watch-sim/tools/start-server.sh",
-  "forwardPorts": [8080],
+  "postAttachCommand": "bash /workspaces/watch-sim/tools/start-server.sh",
   "portsAttributes": {
     "8080": { "label": "Watch Simulator", "onAutoForward": "openPreview" }
   },
