@@ -6,7 +6,7 @@ See [SPEC.md](SPEC.md) for the full plan.
 
 ## Status
 
-Stage 3 of 7: compile from the simulator panel or with Ctrl+Shift+B; errors show in both places.
+Stage 4 of 7: round display with zoom modes, mouse as touch, and the redraw throttle.
 
 ## Codespace
 
@@ -53,6 +53,28 @@ during a build runs once it's done.
 Switching to a different repo recompiles LVGL (about a minute), because each repo's
 `prj.conf` can set different LVGL options.
 
+## The display
+
+- **Round mask**: the canvas is clipped to a circle like the real glass, so anything you draw in
+  the corners is cut off, the same as on the watch.
+- **Zoom** (the dropdown under the toolbar): *Fit to pane* fills the space available; *1:1 pixels*
+  maps one panel pixel to one screen pixel; *Real size* shows the panel at its physical size.
+  The size comes from `diameterMm` in `web/config.js` (36.32 mm, 1.43"; set it from your panel's
+  datasheet). Browsers don't know how big a millimetre is on your screen, so press
+  **Calibrate…**, hold a credit card to the screen and size the rectangle to match. Calibration,
+  zoom and throttle are remembered per browser.
+- **Touch**: the mouse is your finger. Press, drag and hold work as on the watch (LVGL turns them
+  into clicks, scrolls and long presses). Presses outside the circle are ignored and dragging
+  off the edge lifts the finger, because the touch panel is round too.
+- **Throttle to real frame time**: on the watch, sending pixels to the panel is a blocking SPI
+  write (32 MHz), and a full screen takes about 116 ms (`fullFrameMs` in `web/config.js`). With
+  the throttle on, every redraw blocks the main loop for its share of that: a full-screen
+  redraw takes 116 ms, a small label a few ms. Animations then stutter where they would on
+  the watch. Rendering time on the nRF52840 is not included, so the real watch can be a bit slower.
+
+Touch here is wired straight into LVGL by `sim/main.c`. On the watch, the CST820 touch controller
+needs its own LVGL input device in your firmware.
+
 ## Run it locally (Mac or Linux, no container)
 
 You need Python 3, CMake (`brew install cmake`) and Emscripten (the C to WebAssembly compiler):
@@ -82,7 +104,7 @@ about a minute because it compiles LVGL; after that only your files recompile (a
 | `tools/gen_lv_autoconf.py` | Reads the firmware's `prj.conf` and runs it through LVGL's Kconfig, like Zephyr does, so the LVGL options (color depth, fonts, widgets) always match the watch |
 | `build/lv_conf.h` | Simulator copy of Zephyr's `lv_conf.h`: memory, ticks, printf |
 | `build/CMakeLists.txt`, `build/build.sh` | Compiles LVGL, `sim/` and the firmware's `ui/` into `dist/` |
-| `sim/main.c` | The simulator's main: sets up a display like the watch's, calls `ui_init()`, runs the main loop |
+| `sim/main.c` | The simulator's main: sets up a display and touch input like the watch's, calls `ui_init()`, runs the main loop, and does the flush throttle |
 | `sim/lvgl_mem.c` | LVGL's heap, capped at `CONFIG_LV_Z_MEM_POOL_SIZE` (16 KB) like on the watch |
 | `repos.json` | Firmware repos to clone, and which one builds by default |
 | `.devcontainer/` | Codespace image and setup hooks |
@@ -91,7 +113,8 @@ about a minute because it compiles LVGL; after that only your files recompile (a
 | `build/compile.py` | The one way in to a build: takes a lock, runs `build.sh`, writes the result and parsed errors to `.build/status.json` |
 | `build/serve.py` | Serves `dist/` with caching off, plus a small `/api/` the panel uses to compile. Any static server can host `dist/`; the panel just hides the compile toolbar |
 | `vscode/` | VS Code settings for `/workspaces`: IntelliSense from the build's compile commands, and the Ctrl+Shift+B build task |
-| `web/` | The page: compile toolbar, canvas, error list and log. Copied into `dist/` on build |
+| `web/` | The page: compile toolbar, round display with zoom and touch, error list and log. Copied into `dist/` on build |
+| `web/config.js` | Panel facts: resolution, physical diameter, full-frame time |
 | `dist/` | Build output. Plain static files that any web server can host |
 
 Things that match the real watch:

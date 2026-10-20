@@ -3,7 +3,9 @@
  *
  * It sets up LVGL with a display that matches the watch (466x466, RGB565, a render
  * buffer of CONFIG_LV_Z_VDB_SIZE percent of the screen, the CO5300 even-area rule),
- * calls ui_init() from the firmware's ui/ folder, then runs the main loop. The browser
+ * calls ui_init() from the firmware's ui/ folder, then runs the main loop. The mouse is a
+ * touch pointer, and an optional throttle makes each redraw take as long as the real
+ * panel's SPI transfer. The browser
  * calls loop() once per animation frame (about 60 times a second); everything LVGL
  * does happens inside that one call, so it stays on a single thread like the watch.
  */
@@ -30,6 +32,13 @@ static uint8_t panel[HOR_RES * VER_RES * 4];
 static int panel_dirty;
 
 static double boot_ms;
+
+/* Touch, as last reported by web/sim.js. press_latched keeps a quick click that starts
+ * and ends between two LVGL reads (every 30 ms) from being missed. */
+static int touch_x, touch_y, touch_down, press_latched;
+
+/* Milliseconds a full-screen flush takes on the watch (0 = no throttle) */
+static double full_flush_ms;
 
 uint32_t sim_uptime_ms(void)
 {
@@ -67,7 +76,45 @@ static void flush_cb(lv_disp_drv_t *drv, const lv_area_t *a, lv_color_t *px)
         }
     }
     panel_dirty = 1;
+
+    /* On the watch, flushing is a blocking SPI write: the main loop waits until the
+     * strip has been sent. The time grows with the number of pixels, so a strip of
+     * the screen takes that share of a full-screen flush. */
+    if (full_flush_ms > 0) {
+        double px_count = (double)lv_area_get_size(a);
+        double done = emscripten_get_now() + full_flush_ms * px_count / (HOR_RES * VER_RES);
+        while (emscripten_get_now() < done) {
+        }
+    }
+
     lv_disp_flush_ready(drv);
+}
+
+/* LVGL polls this every LV_INDEV_DEF_READ_PERIOD ms from lv_timer_handler(), so the
+ * touch state is only read inside the main loop, like on the watch. */
+static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
+{
+    (void)drv;
+    data->point.x = (lv_coord_t)touch_x;
+    data->point.y = (lv_coord_t)touch_y;
+    data->state = (touch_down || press_latched) ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    press_latched = 0;
+}
+
+/* Called by web/sim.js on mouse events. It only stores the state; LVGL picks it up
+ * on its next read. */
+EMSCRIPTEN_KEEPALIVE void sim_touch(int x, int y, int down)
+{
+    touch_x = x;
+    touch_y = y;
+    touch_down = down;
+    if (down) press_latched = 1;
+}
+
+/* Called by web/sim.js when the throttle checkbox changes. 0 turns it off. */
+EMSCRIPTEN_KEEPALIVE void sim_set_throttle(int full_frame_ms)
+{
+    full_flush_ms = full_frame_ms;
 }
 
 static void loop(void)
@@ -101,6 +148,12 @@ int main(void)
     disp_drv.rounder_cb = even_rounder;
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
+
+    static lv_indev_drv_t touch_drv;
+    lv_indev_drv_init(&touch_drv);
+    touch_drv.type = LV_INDEV_TYPE_POINTER;
+    touch_drv.read_cb = touch_read_cb;
+    lv_indev_drv_register(&touch_drv);
 
     printf("[sim] LVGL %d.%d.%d, %dx%d, %d-bit color\n", LVGL_VERSION_MAJOR,
            LVGL_VERSION_MINOR, LVGL_VERSION_PATCH, HOR_RES, VER_RES, LV_COLOR_DEPTH);

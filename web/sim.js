@@ -1,4 +1,5 @@
 // Starts the compiled watch (watch.js / watch.wasm) and draws its frames on the canvas.
+// The mouse is the touch screen; the zoom and throttle controls are under "Display".
 // When served by build/serve.py it also shows the compile toolbar, restarts the watch
 // after each good build (no page reload, so page state survives) and lists build errors.
 'use strict';
@@ -12,6 +13,23 @@ const repoEl = document.getElementById('repo');
 const compileBtn = document.getElementById('compile');
 const autoEl = document.getElementById('autocompile');
 const statusEl = document.getElementById('status');
+
+// Settings that belong to this browser (zoom, calibration, throttle). Storage can be
+// unavailable (private windows), so failures just mean the defaults are used.
+function loadPref(key, fallback) {
+  try {
+    const v = localStorage.getItem('watch-sim.' + key);
+    return v === null ? fallback : JSON.parse(v);
+  } catch {
+    return fallback;
+  }
+}
+
+function savePref(key, value) {
+  try {
+    localStorage.setItem('watch-sim.' + key, JSON.stringify(value));
+  } catch { /* not saved; fine */ }
+}
 
 function log(text, cls) {
   const line = document.createElement('div');
@@ -48,7 +66,10 @@ function startWatch(version) {
         const bytes = new Uint8ClampedArray(this.HEAPU8.buffer, px, w * h * 4);
         ctx.putImageData(new ImageData(bytes, w, h), 0, 0);
       },
-    }).then((m) => { watch = m; })
+    }).then((m) => {
+      watch = m;
+      watch._sim_set_throttle(throttleEl.checked ? PANEL.fullFrameMs : 0);
+    })
       .catch((e) => log('Failed to start: ' + e, 'err'));
   };
   script.onerror = () => {
@@ -57,6 +78,127 @@ function startWatch(version) {
   };
   document.body.appendChild(script);
 }
+
+// ---- Display: zoom modes and calibration ----
+
+const displayEl = document.getElementById('display');
+const watchEl = document.getElementById('watch');
+const zoomEl = document.getElementById('zoom');
+const zoomHint = document.getElementById('zoomHint');
+const throttleEl = document.getElementById('throttle');
+const calDialog = document.getElementById('calibration');
+const cardEl = document.getElementById('card');
+const cardSize = document.getElementById('cardSize');
+
+const CARD_MM = { w: 85.60, h: 53.98, r: 3.18 };   // ISO/IEC 7810 ID-1 card
+const CSS_PX_PER_MM = 96 / 25.4;   // what CSS assumes; real screens differ, hence calibration
+
+// CSS pixels per real millimetre on this screen (null until calibrated)
+let pxPerMm = loadPref('pxPerMm', null);
+
+// Size of the watch in CSS pixels for the current zoom mode
+function watchSize() {
+  switch (zoomEl.value) {
+    case '1:1':   // one panel pixel per screen pixel, whatever the browser zoom
+      return PANEL.width / window.devicePixelRatio;
+    case 'real':
+      return PANEL.diameterMm * (pxPerMm || CSS_PX_PER_MM);
+    default: {    // fit: as big as the pane allows, leaving room for the bezel
+      const pad = 12;
+      return Math.max(100, Math.min(displayEl.clientWidth, displayEl.clientHeight) - pad);
+    }
+  }
+}
+
+function layout() {
+  const size = watchSize();
+  watchEl.style.width = watchEl.style.height = size + 'px';
+  // Sharp pixels when the panel is blown up; smooth scaling when it's shrunk
+  canvas.classList.toggle('pixelated', size * window.devicePixelRatio >= PANEL.width);
+
+  if (zoomEl.value === 'real') {
+    zoomHint.textContent = `${PANEL.diameterMm} mm` + (pxPerMm ? '' : ' (not calibrated)');
+  } else {
+    zoomHint.textContent = `${Math.round(size * window.devicePixelRatio / PANEL.width * 100)}%`;
+  }
+}
+
+zoomEl.value = loadPref('zoom', 'fit');
+zoomEl.onchange = () => { savePref('zoom', zoomEl.value); layout(); };
+new ResizeObserver(layout).observe(displayEl);
+window.addEventListener('resize', layout);   // also fires when the browser zoom changes
+
+function drawCard() {
+  const v = Number(cardSize.value);
+  cardEl.style.width = CARD_MM.w * v + 'px';
+  cardEl.style.height = CARD_MM.h * v + 'px';
+  cardEl.style.borderRadius = CARD_MM.r * v + 'px';
+}
+
+document.getElementById('calibrate').onclick = () => {
+  cardSize.value = pxPerMm || CSS_PX_PER_MM;
+  drawCard();
+  calDialog.showModal();
+};
+cardSize.oninput = drawCard;
+document.getElementById('calReset').onclick = () => { cardSize.value = CSS_PX_PER_MM; drawCard(); };
+document.getElementById('calCancel').onclick = () => calDialog.close();
+document.getElementById('calSave').onclick = () => {
+  pxPerMm = Number(cardSize.value);
+  savePref('pxPerMm', pxPerMm);
+  calDialog.close();
+  zoomEl.value = 'real';
+  savePref('zoom', 'real');
+  layout();
+};
+
+// ---- Throttle ----
+
+throttleEl.checked = loadPref('throttle', false);
+throttleEl.onchange = () => {
+  savePref('throttle', throttleEl.checked);
+  if (watch) watch._sim_set_throttle(throttleEl.checked ? PANEL.fullFrameMs : 0);
+};
+
+// ---- Touch: the mouse acts as a finger on the round glass ----
+// Presses outside the circle are ignored, and dragging off the edge lifts the finger,
+// because the real touch panel is round too. LVGL handles taps, drags and long presses.
+
+let touching = false;
+
+function panelPoint(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = Math.round((e.clientX - r.left) * PANEL.width / r.width);
+  const y = Math.round((e.clientY - r.top) * PANEL.height / r.height);
+  const cx = PANEL.width / 2, cy = PANEL.height / 2;
+  const inside = (x - cx) ** 2 + (y - cy) ** 2 <= cx * cy;
+  return { x, y, inside };
+}
+
+function sendTouch(p, down) {
+  touching = down;
+  if (watch) watch._sim_touch(p.x, p.y, down ? 1 : 0);
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  const p = panelPoint(e);
+  if (!p.inside) return;
+  canvas.setPointerCapture(e.pointerId);   // keep getting moves if the mouse leaves the canvas
+  sendTouch(p, true);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!touching) return;
+  const p = panelPoint(e);
+  sendTouch(p, p.inside);
+});
+for (const type of ['pointerup', 'pointercancel']) {
+  canvas.addEventListener(type, (e) => {
+    if (touching) sendTouch(panelPoint(e), false);
+  });
+}
+
+layout();
 
 // ---- Compiling (only when the page is served by build/serve.py) ----
 

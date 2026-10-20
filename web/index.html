@@ -4,21 +4,32 @@
 <meta charset="utf-8">
 <title>Watch Simulator</title>
 <style>
+  html, body { height: 100%; }
   body { margin: 0; background: #1e1e1e; color: #ccc; font: 13px system-ui, sans-serif;
-         display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; }
-  #toolbar { width: 466px; max-width: 100%; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  #toolbar[hidden] { display: none; }
-  #toolbar select, #toolbar button { font: inherit; color: #ccc; background: #2d2d2d;
+         display: flex; flex-direction: column; gap: 8px; padding: 12px; box-sizing: border-box; }
+  .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
+  .bar[hidden] { display: none; }
+  select, button { font: inherit; color: #ccc; background: #2d2d2d;
          border: 1px solid #444; border-radius: 3px; padding: 3px 8px; }
-  #toolbar button { background: #0e639c; border-color: #0e639c; color: #fff; cursor: pointer; }
-  #toolbar button:disabled { opacity: 0.6; cursor: default; }
-  #toolbar label { display: flex; align-items: center; gap: 4px; }
+  button { cursor: pointer; }
+  button.primary { background: #0e639c; border-color: #0e639c; color: #fff; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  label { display: flex; align-items: center; gap: 4px; }
+  .hint { color: #999; }
   #status { margin-left: auto; color: #999; }
   #status.ok { color: #89d185; }
   #status.failed { color: #f48771; }
-  #display { position: relative; width: 466px; height: 466px; }
-  #screen { width: 466px; height: 466px; background: #000; image-rendering: pixelated; display: block; }
-  /* Build errors cover the screen (the last good build keeps running underneath) */
+
+  /* The display area takes the space left over. In 1:1 and real size the watch can be
+     bigger than the pane, so it scrolls; margin:auto centres it when it fits. */
+  #display { position: relative; flex: 1; min-height: 120px; overflow: auto; display: flex; }
+  /* Round panel: the circle clips the square canvas, like the real glass. The ring is a bezel. */
+  #watch { flex: none; margin: auto; border-radius: 50%; overflow: hidden;
+           box-shadow: 0 0 0 4px #333; background: #000; }
+  #screen { display: block; width: 100%; height: 100%; touch-action: none; }
+  #screen.pixelated { image-rendering: pixelated; }
+
+  /* Build errors cover the display (the last good build keeps running underneath) */
   #errors { position: absolute; inset: 0; overflow: auto; padding: 12px; box-sizing: border-box;
             background: rgba(30, 0, 0, 0.92); font: 12px ui-monospace, monospace; }
   #errors[hidden] { display: none; }
@@ -30,24 +41,56 @@
   #errors details { margin-top: 10px; }
   #errors summary { cursor: pointer; color: #999; }
   #errors pre { white-space: pre-wrap; word-break: break-word; color: #bbb; }
-  #log { width: 466px; max-width: 100%; height: 140px; margin: 0; padding: 8px; overflow: auto;
+
+  #log { flex: none; height: 140px; margin: 0; padding: 8px; overflow: auto;
          background: #111; font: 12px ui-monospace, monospace; white-space: pre-wrap; box-sizing: border-box; }
   .err { color: #f48771; }
   .sep { color: #666; }
+
+  /* Calibration: hold a credit card to the screen and size the rectangle to match */
+  dialog { background: #252526; color: #ccc; border: 1px solid #444; border-radius: 6px; max-width: 90vw; }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+  #card { margin: 16px auto; border: 2px solid #4fc1ff; border-radius: 3.18mm; box-sizing: border-box; }
+  #cardSize { width: 100%; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 </style>
 </head>
 <body>
-  <div id="toolbar" hidden>
+  <div id="toolbar" class="bar" hidden>
     <select id="repo" title="Firmware repo to build"></select>
-    <button id="compile">Compile</button>
+    <button id="compile" class="primary">Compile</button>
     <label title="Rebuild when a file in ui/, app/ or hal/ is saved"><input type="checkbox" id="autocompile"> Auto compile on save</label>
     <span id="status"></span>
   </div>
+  <div class="bar">
+    <select id="zoom" title="Display size">
+      <option value="fit">Fit to pane</option>
+      <option value="1:1">1:1 pixels</option>
+      <option value="real">Real size</option>
+    </select>
+    <button id="calibrate" title="Match the screen to a credit card so Real size is accurate">Calibrate…</button>
+    <label title="Make each redraw take as long as the SPI transfer on the watch"><input type="checkbox" id="throttle"> Throttle to real frame time</label>
+    <span id="zoomHint" class="hint"></span>
+  </div>
   <div id="display">
-    <canvas id="screen" width="466" height="466"></canvas>
+    <div id="watch"><canvas id="screen" width="466" height="466"></canvas></div>
     <div id="errors" hidden></div>
   </div>
   <pre id="log"></pre>
+
+  <dialog id="calibration">
+    <div>Hold a credit card (or any bank or ID card, 85.60 × 53.98 mm) flat against the screen<br>
+      and move the slider until the blue rectangle is exactly the size of the card.</div>
+    <div id="card"></div>
+    <input type="range" id="cardSize" min="1.5" max="10" step="0.01">
+    <div class="actions">
+      <button id="calReset">Reset</button>
+      <button id="calCancel">Cancel</button>
+      <button id="calSave" class="primary">Save</button>
+    </div>
+  </dialog>
+
+  <script src="config.js"></script>
   <script src="sim.js"></script>
 </body>
 </html>
